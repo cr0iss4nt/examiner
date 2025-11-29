@@ -1,7 +1,6 @@
 import json
 
 def generate_html_from_json(json_data):
-    # Упрощённый, безопасный HTML генератор (как в оригинале)
     questions_html = ""
     for i, item in enumerate(json_data, 1):
         q = item.get("question", "")

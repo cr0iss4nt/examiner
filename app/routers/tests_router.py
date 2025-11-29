@@ -5,6 +5,8 @@ from app.services.model_service import model_request
 from app.utils.html_generator import generate_html_from_json
 from app.config import COLLECTION_NAME, DATA_FOLDER
 import json
+import os
+from pathlib import Path
 
 router = APIRouter()
 vector_service = VectorService(collection_name=COLLECTION_NAME)
@@ -20,6 +22,9 @@ def generate_tests(req: GenerateRequest):
         vector_service.recreate_collection()
     # try to ensure DB has data
     vector_service.add_documents_from_folder(DATA_FOLDER)
+
+    os.remove('last_result.json')
+    os.remove('test.html')
 
     # prepare prompt with context
     ctx = vector_service.get_context(max_chars=120000).get('context', '')
@@ -48,6 +53,7 @@ def generate_tests(req: GenerateRequest):
 5. На каждый вопрос должен быть 1 правильный ответ, ни больше, ни меньше.
 6. Если в контексте нет информации по заданной теме, сгенерируй вопросы без контекста.
 7. НЕ ПИШИ "Текст вопроса?" и "Вариант 1" из примера, придумай СВОИ вопросы и ответы.
+8. Помни, что ни изображений, ни примеров из исходных материалов испытуемый не видит.
 
 В твоём ответе должен быть только json и ничего более.
 """
@@ -62,7 +68,7 @@ def generate_tests(req: GenerateRequest):
                 answer = answer[:-3].strip()
         tests = json.loads(answer)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"model error: {e}")
+        raise HTTPException(status_code=500, detail=f"Ошибка модели: {e}")
 
     # save JSON + HTML to disk (optional)
     with open("generated_tests_with_context.json", "w", encoding="utf-8") as f:
@@ -73,13 +79,13 @@ def generate_tests(req: GenerateRequest):
 
     return {"ok": True, "tests_count": len(tests), "html_path": "/test.html"}
 
-@router.get("/test.html")
+@router.get("/test")
 def get_test_html():
     try:
         with open("test.html", "r", encoding="utf-8") as f:
             return Response(content=f.read(), media_type="text/html; charset=utf-8")
     except Exception:
-        raise HTTPException(status_code=404, detail="test.html not found")
+        raise HTTPException(status_code=404, detail="Тест недоступен")
 
 @router.post("/result")
 async def receive_result(request: Request):
@@ -112,3 +118,18 @@ async def receive_result(request: Request):
         json.dump({"result": body, "analysis": analysis}, f, ensure_ascii=False, indent=2)
 
     return {"ok": True, "analysis": analysis}
+
+@router.get("/result")
+def get_result():
+    file_path = Path("last_result.json")
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Результаты недоступны")
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        return None
+    except Exception:
+        return None
