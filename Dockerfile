@@ -15,9 +15,9 @@ COPY app ./app
 COPY main.py .
 
 # Открываем порт, который использует uvicorn
-EXPOSE 8000
+EXPOSE 8500
 
 # Запуск FastAPI
-#CMD ["uvicorn", "main", "--host", "0.0.0.0", "--port", "8000"]
+#CMD ["uvicorn", "main", "--host", "0.0.0.0", "--port", "8500"]
 CMD ["python", "../main.py"]
 

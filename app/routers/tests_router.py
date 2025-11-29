@@ -2,29 +2,35 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 from app.services.vector_service import VectorService
 from app.services.model_service import model_request
-from app.utils.html_generator import generate_html_from_json
+from app.utils.html_generator import render_test_page
 from app.config import COLLECTION_NAME, DATA_FOLDER
 import json
 import os
 from pathlib import Path
+from fastapi import Request
+
 
 router = APIRouter()
 vector_service = VectorService(collection_name=COLLECTION_NAME)
+
+GENERATED_TEST_PATH = "generated_tests_with_context.json"
+GENERATED_RESULT_PATH = "last_result.json"
 
 class GenerateRequest(BaseModel):
     query: str
     force_recreate: bool = False
 
 @router.post("/generate-tests")
-def generate_tests(req: GenerateRequest):
-    # optionally (re)load documents
+def generate_tests(req: GenerateRequest, request: Request):
     if req.force_recreate:
         vector_service.recreate_collection()
-    # try to ensure DB has data
+
     vector_service.add_documents_from_folder(DATA_FOLDER)
 
-    os.remove('last_result.json')
-    os.remove('test.html')
+    if os.path.exists(GENERATED_TEST_PATH):
+        os.remove(GENERATED_TEST_PATH)
+    if os.path.exists(GENERATED_RESULT_PATH):
+        os.remove(GENERATED_RESULT_PATH)
 
     # prepare prompt with context
     ctx = vector_service.get_context(max_chars=120000).get('context', '')
@@ -54,38 +60,44 @@ def generate_tests(req: GenerateRequest):
 6. Если в контексте нет информации по заданной теме, сгенерируй вопросы без контекста.
 7. НЕ ПИШИ "Текст вопроса?" и "Вариант 1" из примера, придумай СВОИ вопросы и ответы.
 8. Помни, что ни изображений, ни примеров из исходных материалов испытуемый не видит.
+9. Тест должен быть на русском языке.
 
 В твоём ответе должен быть только json и ничего более.
 """
+    # запрос к модели
     try:
         resp = model_request(prompt)
         j = resp.json()
-        answer = j['choices'][0]['message']['content']
-        # strip markdown fences if any
-        if answer.startswith("```json"):
-            answer = answer[len("```json"):].strip()
-            if answer.endswith("```"):
-                answer = answer[:-3].strip()
+        answer = j['choices'][0]['message']['content'].strip()
+
+        # убираем ```json
+        if answer.startswith("```"):
+            answer = answer.split("```")[1].replace("json", "").strip()
+
         tests = json.loads(answer)
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка модели: {e}")
 
-    # save JSON + HTML to disk (optional)
-    with open("generated_tests_with_context.json", "w", encoding="utf-8") as f:
+    # сохраняем JSON
+    with open(GENERATED_TEST_PATH, "w", encoding="utf-8") as f:
         json.dump(tests, f, ensure_ascii=False, indent=2)
-    html = generate_html_from_json(tests)
-    with open("test.html", "w", encoding="utf-8") as f:
-        f.write(html)
 
-    return {"ok": True, "tests_count": len(tests), "html_path": "/test.html"}
+    # отдаём путь
+    return {"ok": True, "tests_count": len(tests), "html_url": "/test"}
+
 
 @router.get("/test")
-def get_test_html():
-    try:
-        with open("test.html", "r", encoding="utf-8") as f:
-            return Response(content=f.read(), media_type="text/html; charset=utf-8")
-    except Exception:
-        raise HTTPException(status_code=404, detail="Тест недоступен")
+def get_test_html(request: Request):
+    """Возвращает HTML страницу на основе шаблона."""
+    if not os.path.exists(GENERATED_TEST_PATH):
+        raise HTTPException(status_code=404, detail="Тест не найден")
+
+    with open(GENERATED_TEST_PATH, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    return render_test_page(request, data)
+
 
 @router.post("/result")
 async def receive_result(request: Request):
@@ -95,7 +107,7 @@ async def receive_result(request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="invalid json")
 
-    context = vector_service.get_context(max_chars=20000).get('context', '')
+    context = vector_service.get_context(max_chars=50000).get('context', '')
     prompt = f"""Ты ассистент по подготовке к экзамену. Твоя задача - проверить мой тест. Вот теория по тесту:
 {context}
 
@@ -114,14 +126,14 @@ async def receive_result(request: Request):
         raise HTTPException(status_code=500, detail=f"model error: {e}")
 
     # также записать результат локально
-    with open("last_result.json", "w", encoding="utf-8") as f:
+    with open(GENERATED_RESULT_PATH, "w", encoding="utf-8") as f:
         json.dump({"result": body, "analysis": analysis}, f, ensure_ascii=False, indent=2)
 
     return {"ok": True, "analysis": analysis}
 
 @router.get("/result")
 def get_result():
-    file_path = Path("last_result.json")
+    file_path = Path(GENERATED_RESULT_PATH)
 
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Результаты недоступны")
