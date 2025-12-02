@@ -3,11 +3,12 @@ from fastapi import Request
 
 templates = Jinja2Templates(directory="app/templates")
 
-def render_test_page(request: Request, json_data):
+def render_test_page(request: Request, json_data, user_id: str = None):
     return templates.TemplateResponse(
         "test_template.html",
         {
             "request": request,
-            "questions": json_data
+            "questions": json_data,
+            "user_id": user_id
         }
     )
