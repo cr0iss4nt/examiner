@@ -1,7 +1,7 @@
 services:
   api:
     build: .
-    container_name: fastapi_app
+    container_name: examiner
     ports:
       - "8500:8500"
     environment:
@@ -12,7 +12,7 @@ services:
 
   qdrant:
     image: qdrant/qdrant
-    container_name: qdrant_db
+    container_name: qdrant
     ports:
       - "6333:6333"
     volumes:
