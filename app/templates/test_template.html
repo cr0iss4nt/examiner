@@ -15,12 +15,6 @@
 <div class="container py-4">
     <h2 class="text-center mb-4">Тест</h2>
 
-    {% if user_id %}
-    <div class="alert alert-info mb-4">
-        <strong>Пользователь:</strong> {{ user_id }}
-    </div>
-    {% endif %}
-
     <form id="quizForm">
         {% for q in questions %}
         {% set q_index = loop.index0 %}
