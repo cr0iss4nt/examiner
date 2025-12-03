@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import json
+
+from app.config import COLLECTION_NAME
 from app.services.user_db_service import UserDBService
 import os
 
@@ -205,7 +207,7 @@ def db_health():
 
         collection_exists = False
         points_count = 0
-        collection_name = os.getenv("USER_FILES_COLLECTION", "user_files")
+        collection_name = COLLECTION_NAME
 
         for col in collections.collections:
             if col.name == collection_name:
